@@ -18,14 +18,16 @@ package wmclient
 import (
 	"bufio"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"flag"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -882,7 +884,7 @@ func TestLookupMatchingCacheWithAdditionalHeaders(t *testing.T) {
 		d, err := client.LookupRequest(*request)
 		require.Nil(t, err)
 		require.NotNil(t, d)
-		require.Equal(t, "generic_fire_os_ver4_0_tv", d.Capabilities["wurfl_id"])
+		require.Equal(t, "generic_android_ver4_4", d.Capabilities["wurfl_id"])
 	}
 
 	// Create the same request, but without x-requested-with
