@@ -1,5 +1,11 @@
 # Changelog
 
+### 2.1.3
+- Updated dependencies
+
+### 2.1.2
+- Revamped example.go, fixed tests
+
 ### 2.1.1
 - Fixed issue in `LookupHeaders(map[string]string` when correct headers are passed using mixed case keys (ie: "UsEr-Agent")
 
