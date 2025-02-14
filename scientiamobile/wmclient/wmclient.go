@@ -37,7 +37,7 @@ import (
 const userAgentHeader = "User-Agent"
 const deviceDefaultCacheSize = 20000
 
-//default timeouts
+// default timeouts
 const defaultConnTimeout = time.Duration(10 * time.Second)
 const defaultTransferTimeout = time.Duration(60 * time.Second)
 
@@ -75,7 +75,7 @@ type WmClient struct {
 
 // GetAPIVersion returns the version number of WM Client API
 func GetAPIVersion() string {
-	return "2.1.2"
+	return "2.1.3"
 }
 
 // creates a new http.Client with the specified timeouts

@@ -18,14 +18,16 @@ package wmclient
 import (
 	"bufio"
 	"fmt"
-	"github.com/stretchr/testify/assert"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
+
 	"flag"
+
 	"github.com/stretchr/testify/require"
 )
 
@@ -877,33 +879,33 @@ func TestLookupMatchingCacheWithAdditionalHeaders(t *testing.T) {
 	client := createTestCachedClient(t)
 	request, err := http.NewRequest("GET", "scientiamobile.com", nil)
 	if err == nil {
-		request.Header.Add("User-Agent", "Mozilla/5.0 (Linux; Android 4.4.4; SmartTV Build/KTU84P), AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132, _STB_C001_2017/0.9 (NETRANGEMMH, ExpressLuck, Wired)")
+		request.Header.Add("User-Agent", "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Focus/1.0.1 Chrome/55.0.2883.91 Mobile Safari/537.36")
 		request.Header.Add("x-requested-with", "org.mozilla.tv.firefox")
 		d, err := client.LookupRequest(*request)
 		require.Nil(t, err)
 		require.NotNil(t, d)
-		require.Equal(t, "generic_fire_os_ver4_0_tv", d.Capabilities["wurfl_id"])
+		require.Equal(t, "generic_fire_os_ver8_0_tv", d.Capabilities["wurfl_id"])
 	}
 
 	// Create the same request, but without x-requested-with
 	request, err = http.NewRequest("GET", "scientiamobile.com", nil)
 	if err == nil {
-		request.Header.Add("User-Agent", "Mozilla/5.0 (Linux; Android 4.4.4; SmartTV Build/KTU84P), AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132, _STB_C001_2017/0.9 (NETRANGEMMH, ExpressLuck, Wired)")
+		request.Header.Add("User-Agent", "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Focus/1.0.1 Chrome/55.0.2883.91 Mobile Safari/537.36")
 		d, err := client.LookupRequest(*request)
 		require.Nil(t, err)
 		require.NotNil(t, d)
-		require.Equal(t, "generic_smarttv_browser", d.Capabilities["wurfl_id"])
+		require.Equal(t, "generic_android_ver11_0", d.Capabilities["wurfl_id"])
 	}
 
 	// And again with the old one
 	request, err = http.NewRequest("GET", "scientiamobile.com", nil)
 	if err == nil {
-		request.Header.Add("User-Agent", "Mozilla/5.0 (Linux; Android 4.4.4; SmartTV Build/KTU84P), AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132, _STB_C001_2017/0.9 (NETRANGEMMH, ExpressLuck, Wired)")
+		request.Header.Add("User-Agent", "Mozilla/5.0 (Linux; Android 11) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Focus/1.0.1 Chrome/55.0.2883.91 Mobile Safari/537.36")
 		request.Header.Add("x-requested-with", "org.mozilla.tv.firefox")
 		d, err := client.LookupRequest(*request)
 		require.Nil(t, err)
 		require.NotNil(t, d)
-		require.Equal(t, "generic_fire_os_ver4_0_tv", d.Capabilities["wurfl_id"])
+		require.Equal(t, "generic_fire_os_ver8_0_tv", d.Capabilities["wurfl_id"])
 	}
 }
 
