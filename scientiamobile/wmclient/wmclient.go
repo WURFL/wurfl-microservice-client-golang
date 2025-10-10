@@ -25,9 +25,11 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/groupcache/lru"
@@ -71,11 +73,20 @@ type WmClient struct {
 	deviceOsVerMap  map[string][]string
 
 	clientLtime string
+
+	// Cache statistics using atomic counters for thread-safe access
+	cacheHitUser    uint64 // user-agent cache hits
+	cacheMissUser   uint64 // user-agent cache misses
+	cacheHitDevice  uint64 // device ID cache hits
+	cacheMissDevice uint64 // device ID cache misses
+
+	localeRegex         *regexp.Regexp
+	multiSeparatorRegex *regexp.Regexp
 }
 
 // GetAPIVersion returns the version number of WM Client API
 func GetAPIVersion() string {
-	return "2.1.3"
+	return "2.2.0"
 }
 
 // creates a new http.Client with the specified timeouts
@@ -123,6 +134,13 @@ func Create(Scheme string, Host string, Port string, BaseURI string) (*WmClient,
 	client.VirtualCaps = data.VirtualCaps
 	sort.Strings(client.StaticCaps)
 	sort.Strings(client.VirtualCaps)
+
+	client.localeRegex = regexp.MustCompile(`[a-zA_Z]{2}[_-][a-zA-Z]{2}`)
+	client.multiSeparatorRegex = regexp.MustCompile(`FBRV/\d+`)
+
+	client.userAgentCache = nil
+	client.deviceCache = nil
+
 	return client, nil
 }
 
@@ -227,6 +245,12 @@ func (c *WmClient) clearCache() {
 	c.deviceOses = nil
 	c.deviceOsVerMap = nil
 	c.deviceOsesMutex.Unlock()
+
+	// Reset cache statistics
+	atomic.StoreUint64(&c.cacheHitUser, 0)
+	atomic.StoreUint64(&c.cacheMissUser, 0)
+	atomic.StoreUint64(&c.cacheHitDevice, 0)
+	atomic.StoreUint64(&c.cacheMissDevice, 0)
 }
 
 // GetActualCacheSizes return the values of cache size. The first value being the device-id based cache, the second value being
@@ -249,6 +273,27 @@ func (c *WmClient) GetActualCacheSizes() (int, int) {
 	c.lruUserAgentCS.Unlock()
 
 	return dSize, uaSize
+}
+
+// GetCacheStats returns cache hit/miss statistics for both user-agent and device ID caches.
+// Returns a JSONStatsData struct containing all cache statistics and client information
+func (c *WmClient) GetCacheStats() *JSONStatsData {
+	return &JSONStatsData{
+		UserAgentCacheHits:   atomic.LoadUint64(&c.cacheHitUser),
+		UserAgentCacheMisses: atomic.LoadUint64(&c.cacheMissUser),
+		DeviceIDCacheHits:    atomic.LoadUint64(&c.cacheHitDevice),
+		DeviceIDCacheMisses:  atomic.LoadUint64(&c.cacheMissDevice),
+		WmClientVersion:      GetAPIVersion(),
+		Timestamp:            time.Now().Unix(),
+	}
+}
+
+// ResetCacheStats resets all cache statistics counters to zero
+func (c *WmClient) ResetCacheStats() {
+	atomic.StoreUint64(&c.cacheHitUser, 0)
+	atomic.StoreUint64(&c.cacheMissUser, 0)
+	atomic.StoreUint64(&c.cacheHitDevice, 0)
+	atomic.StoreUint64(&c.cacheMissDevice, 0)
 }
 
 // HasStaticCapability - returns true if the given CapName exist in this client' static capability set, false otherwise
@@ -295,10 +340,14 @@ func (c *WmClient) LookupRequest(request http.Request) (*JSONDeviceData, error) 
 		c.lruUserAgentCS.Unlock()
 
 		if ok {
+			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
 		}
 	}
+
+	// Cache miss
+	atomic.AddUint64(&c.cacheMissUser, 1)
 
 	jrequest.RequestedCaps = c.requestedStaticCaps
 	jrequest.RequestedVCaps = c.requestedVirtualCaps
@@ -343,14 +392,20 @@ func (c *WmClient) LookupHeaders(headers map[string]string) (*JSONDeviceData, er
 	// Do a cache lookup
 	if c.userAgentCache != nil {
 
+		cacheKey := c.getUserAgentCacheKey(jrequest.LookupHeaders)
+		fmt.Printf("looking for hash key [%s] in cache\n", cacheKey)
+
 		c.lruUserAgentCS.Lock()
-		value, ok := c.userAgentCache.Get(c.getUserAgentCacheKey(jrequest.LookupHeaders))
+		value, ok := c.userAgentCache.Get(cacheKey)
 		c.lruUserAgentCS.Unlock()
 
 		if ok {
+			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
+			fmt.Printf("hash key [%s] found in cache\n", cacheKey)
 			return jdd, nil
 		}
+		fmt.Printf("hash key [%s] not found in cache\n", cacheKey)
 	}
 
 	jrequest.RequestedCaps = c.requestedStaticCaps
@@ -364,8 +419,13 @@ func (c *WmClient) LookupHeaders(headers map[string]string) (*JSONDeviceData, er
 
 		// lock and add element
 		if c.userAgentCache != nil {
+			// Cache miss
+			atomic.AddUint64(&c.cacheMissUser, 1)
+
+			cacheKey := c.getUserAgentCacheKey(jrequest.LookupHeaders)
+			fmt.Printf("adding element with hash key [%s] to cache\n", cacheKey)
 			c.lruUserAgentCS.Lock()
-			c.userAgentCache.Add(c.getUserAgentCacheKey(jrequest.LookupHeaders), deviceData)
+			c.userAgentCache.Add(cacheKey, deviceData)
 			c.lruUserAgentCS.Unlock()
 		}
 	}
@@ -386,10 +446,14 @@ func (c *WmClient) LookupUserAgent(userAgent string) (*JSONDeviceData, error) {
 		c.lruUserAgentCS.Unlock()
 
 		if ok {
+			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
 		}
 	}
+
+	// Cache miss
+	atomic.AddUint64(&c.cacheMissUser, 1)
 
 	var jsonRequest = Request{LookupHeaders: make(map[string]string)}
 
@@ -424,10 +488,14 @@ func (c *WmClient) LookupDeviceID(deviceID string) (*JSONDeviceData, error) {
 		c.lruDeviceCS.Unlock()
 
 		if ok {
+			atomic.AddUint64(&c.cacheHitDevice, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
 		}
 	}
+
+	// Cache miss
+	atomic.AddUint64(&c.cacheMissDevice, 1)
 
 	var jsonRequest = Request{}
 	jsonRequest.WurflID = deviceID
@@ -556,6 +624,9 @@ func (c *WmClient) internalLookup(request Request, path string) (*JSONDeviceData
 		return nil, umerr
 	}
 
+	// Add wmclient version to the response
+	deviceData.WmClientVersion = GetAPIVersion()
+
 	// check for error messages in json and return it with data from device
 	if len(deviceData.Error) > 0 {
 		errMsg := deviceData.Error
@@ -576,8 +647,18 @@ func (c *WmClient) getUserAgentCacheKey(headers map[string]string) string {
 	for _, hname := range c.ImportantHeaders {
 		key += headers[hname]
 	}
-	md5Sum := md5.Sum([]byte(key))
-	return hex.EncodeToString(md5Sum[:])
+
+	cleanedKey := c.localeRegex.ReplaceAllString(key, "")
+	cleanedKey = c.multiSeparatorRegex.ReplaceAllString(cleanedKey, "")
+
+	fmt.Printf("raw key [%s]\n", cleanedKey)
+
+	md5Sum := md5.Sum([]byte(cleanedKey))
+	hash := hex.EncodeToString(md5Sum[:])
+
+	fmt.Printf("hash key[%s]\n", hash)
+
+	return hash
 }
 
 func checkData(data *JSONInfoData) bool {
