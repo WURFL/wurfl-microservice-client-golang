@@ -620,9 +620,6 @@ func (c *WmClient) internalLookup(request Request, path string) (*JSONDeviceData
 		return nil, umerr
 	}
 
-	// Add wmclient version to the response
-	deviceData.WmClientVersion = GetAPIVersion()
-
 	// check for error messages in json and return it with data from device
 	if len(deviceData.Error) > 0 {
 		errMsg := deviceData.Error

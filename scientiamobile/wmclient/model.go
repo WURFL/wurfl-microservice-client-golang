@@ -39,12 +39,11 @@ type Request struct {
 
 // JSONDeviceData models a WURFL device data in JSON string only format
 type JSONDeviceData struct {
-	APIVersion      string            `json:"apiVersion"`
-	Capabilities    map[string]string `json:"capabilities"`
-	Error           string            `json:"error,omitempty"`
-	Mtime           int64             `json:"mtime"`           // timestamp of this data structure creation
-	Ltime           string            `json:"ltime"`           // time of last wurfl.xml file load
-	WmClientVersion string            `json:"wmClientVersion"` // wmclient API version
+	APIVersion   string            `json:"apiVersion"`
+	Capabilities map[string]string `json:"capabilities"`
+	Error        string            `json:"error,omitempty"`
+	Mtime        int64             `json:"mtime"` // timestamp of this data structure creation
+	Ltime        string            `json:"ltime"` // time of last wurfl.xml file load
 }
 
 // JSONDeviceDataTyped models a WURFL device data in JSON typed format
