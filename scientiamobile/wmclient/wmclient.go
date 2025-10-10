@@ -79,9 +79,6 @@ type WmClient struct {
 	cacheMissUser   uint64 // user-agent cache misses
 	cacheHitDevice  uint64 // device ID cache hits
 	cacheMissDevice uint64 // device ID cache misses
-
-	localeRegex         *regexp.Regexp
-	multiSeparatorRegex *regexp.Regexp
 }
 
 // GetAPIVersion returns the version number of WM Client API
