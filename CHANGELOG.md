@@ -1,5 +1,9 @@
 # Changelog
 
+### 2.2.0
+- Collects cache hit/miss statistics
+  Added GetCacheStats() and ResetCacheStats() methods to API
+
 ### 2.1.3
 - Updated dependencies
 
