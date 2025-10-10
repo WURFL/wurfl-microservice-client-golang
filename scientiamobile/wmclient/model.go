@@ -39,11 +39,12 @@ type Request struct {
 
 // JSONDeviceData models a WURFL device data in JSON string only format
 type JSONDeviceData struct {
-	APIVersion   string            `json:"apiVersion"`
-	Capabilities map[string]string `json:"capabilities"`
-	Error        string            `json:"error, omitempty"`
-	Mtime        int64             `json:"mtime"` // timestamp of this data structure creation
-	Ltime        string            `json:"ltime"` // time of last wurfl.xml file load
+	APIVersion      string            `json:"apiVersion"`
+	Capabilities    map[string]string `json:"capabilities"`
+	Error           string            `json:"error, omitempty"`
+	Mtime           int64             `json:"mtime"`           // timestamp of this data structure creation
+	Ltime           string            `json:"ltime"`           // time of last wurfl.xml file load
+	WmClientVersion string            `json:"wmClientVersion"` // wmclient API version
 }
 
 // JSONDeviceDataTyped models a WURFL device data in JSON typed format
@@ -72,4 +73,14 @@ type JSONModelMktName struct {
 type JSONDeviceOsVersions struct {
 	OsName    string `json:"device_os"`
 	OsVersion string `json:"device_os_version"`
+}
+
+// JSONStatsData holds cache statistics and client information
+type JSONStatsData struct {
+	UserAgentCacheHits   uint64 `json:"user_agent_cache_hits"`
+	UserAgentCacheMisses uint64 `json:"user_agent_cache_misses"`
+	DeviceIDCacheHits    uint64 `json:"device_id_cache_hits"`
+	DeviceIDCacheMisses  uint64 `json:"device_id_cache_misses"`
+	WmClientVersion      string `json:"wm_client_version"`
+	Timestamp            int64  `json:"timestamp"`
 }
