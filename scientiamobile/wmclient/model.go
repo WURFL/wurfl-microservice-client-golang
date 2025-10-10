@@ -32,16 +32,16 @@ type JSONInfoData struct {
 type Request struct {
 	LookupHeaders  map[string]string `json:"lookup_headers"`
 	RequestedCaps  []string          `json:"requested_caps"`
-	RequestedVCaps []string          `json:"requested_vcaps, omitempty"`
-	WurflID        string            `json:"wurfl_id, omitempty"`
-	TacCode        string            `json:"tac_code, omitempty"`
+	RequestedVCaps []string          `json:"requested_vcaps,omitempty"`
+	WurflID        string            `json:"wurfl_id,omitempty"`
+	TacCode        string            `json:"tac_code,omitempty"`
 }
 
 // JSONDeviceData models a WURFL device data in JSON string only format
 type JSONDeviceData struct {
 	APIVersion      string            `json:"apiVersion"`
 	Capabilities    map[string]string `json:"capabilities"`
-	Error           string            `json:"error, omitempty"`
+	Error           string            `json:"error,omitempty"`
 	Mtime           int64             `json:"mtime"`           // timestamp of this data structure creation
 	Ltime           string            `json:"ltime"`           // time of last wurfl.xml file load
 	WmClientVersion string            `json:"wmClientVersion"` // wmclient API version
@@ -51,7 +51,7 @@ type JSONDeviceData struct {
 type JSONDeviceDataTyped struct {
 	APIVersion   string                 `json:"apiVersion"`
 	Capabilities map[string]interface{} `json:"capabilities"`
-	Error        string                 `json:"error, omitempty"`
+	Error        string                 `json:"error,omitempty"`
 	Mtime        int64                  `json:"mtime"`
 	Ltime        string                 `json:"ltime"`
 }

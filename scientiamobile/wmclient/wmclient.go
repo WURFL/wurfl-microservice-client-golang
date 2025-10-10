@@ -346,9 +346,6 @@ func (c *WmClient) LookupRequest(request http.Request) (*JSONDeviceData, error) 
 		}
 	}
 
-	// Cache miss
-	atomic.AddUint64(&c.cacheMissUser, 1)
-
 	jrequest.RequestedCaps = c.requestedStaticCaps
 	jrequest.RequestedVCaps = c.requestedVirtualCaps
 
@@ -360,6 +357,9 @@ func (c *WmClient) LookupRequest(request http.Request) (*JSONDeviceData, error) 
 
 		// lock and add element
 		if c.userAgentCache != nil {
+			// Cache miss
+			atomic.AddUint64(&c.cacheMissUser, 1)
+
 			c.lruUserAgentCS.Lock()
 			c.userAgentCache.Add(c.getUserAgentCacheKey(jrequest.LookupHeaders), deviceData)
 			c.lruUserAgentCS.Unlock()
@@ -393,7 +393,6 @@ func (c *WmClient) LookupHeaders(headers map[string]string) (*JSONDeviceData, er
 	if c.userAgentCache != nil {
 
 		cacheKey := c.getUserAgentCacheKey(jrequest.LookupHeaders)
-		fmt.Printf("looking for hash key [%s] in cache\n", cacheKey)
 
 		c.lruUserAgentCS.Lock()
 		value, ok := c.userAgentCache.Get(cacheKey)
@@ -402,10 +401,8 @@ func (c *WmClient) LookupHeaders(headers map[string]string) (*JSONDeviceData, er
 		if ok {
 			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
-			fmt.Printf("hash key [%s] found in cache\n", cacheKey)
 			return jdd, nil
 		}
-		fmt.Printf("hash key [%s] not found in cache\n", cacheKey)
 	}
 
 	jrequest.RequestedCaps = c.requestedStaticCaps
@@ -423,7 +420,6 @@ func (c *WmClient) LookupHeaders(headers map[string]string) (*JSONDeviceData, er
 			atomic.AddUint64(&c.cacheMissUser, 1)
 
 			cacheKey := c.getUserAgentCacheKey(jrequest.LookupHeaders)
-			fmt.Printf("adding element with hash key [%s] to cache\n", cacheKey)
 			c.lruUserAgentCS.Lock()
 			c.userAgentCache.Add(cacheKey, deviceData)
 			c.lruUserAgentCS.Unlock()
@@ -452,9 +448,6 @@ func (c *WmClient) LookupUserAgent(userAgent string) (*JSONDeviceData, error) {
 		}
 	}
 
-	// Cache miss
-	atomic.AddUint64(&c.cacheMissUser, 1)
-
 	var jsonRequest = Request{LookupHeaders: make(map[string]string)}
 
 	// Add user-agent to the Request object
@@ -469,6 +462,9 @@ func (c *WmClient) LookupUserAgent(userAgent string) (*JSONDeviceData, error) {
 
 		// we need to lock when writing since cache is not thread safe
 		if c.userAgentCache != nil {
+			// Cache miss
+			atomic.AddUint64(&c.cacheMissUser, 1)
+
 			c.lruUserAgentCS.Lock()
 			c.userAgentCache.Add(c.getUserAgentCacheKey(headers), deviceData)
 			c.lruUserAgentCS.Unlock()
@@ -494,9 +490,6 @@ func (c *WmClient) LookupDeviceID(deviceID string) (*JSONDeviceData, error) {
 		}
 	}
 
-	// Cache miss
-	atomic.AddUint64(&c.cacheMissDevice, 1)
-
 	var jsonRequest = Request{}
 	jsonRequest.WurflID = deviceID
 	jsonRequest.RequestedCaps = c.requestedStaticCaps
@@ -509,6 +502,9 @@ func (c *WmClient) LookupDeviceID(deviceID string) (*JSONDeviceData, error) {
 		c.clearCachesIfNeeded(deviceData.Ltime)
 
 		if c.deviceCache != nil {
+			// Cache miss
+			atomic.AddUint64(&c.cacheMissDevice, 1)
+
 			// we need to lock when writing since cache is not thread safe
 			c.lruDeviceCS.Lock()
 			c.deviceCache.Add(deviceID, deviceData)
@@ -648,15 +644,8 @@ func (c *WmClient) getUserAgentCacheKey(headers map[string]string) string {
 		key += headers[hname]
 	}
 
-	cleanedKey := c.localeRegex.ReplaceAllString(key, "")
-	cleanedKey = c.multiSeparatorRegex.ReplaceAllString(cleanedKey, "")
-
-	fmt.Printf("raw key [%s]\n", cleanedKey)
-
-	md5Sum := md5.Sum([]byte(cleanedKey))
+	md5Sum := md5.Sum([]byte(key))
 	hash := hex.EncodeToString(md5Sum[:])
-
-	fmt.Printf("hash key[%s]\n", hash)
 
 	return hash
 }
