@@ -25,7 +25,6 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
-	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -131,9 +130,6 @@ func Create(Scheme string, Host string, Port string, BaseURI string) (*WmClient,
 	client.VirtualCaps = data.VirtualCaps
 	sort.Strings(client.StaticCaps)
 	sort.Strings(client.VirtualCaps)
-
-	client.localeRegex = regexp.MustCompile(`[a-zA_Z]{2}[_-][a-zA-Z]{2}`)
-	client.multiSeparatorRegex = regexp.MustCompile(`FBRV/\d+`)
 
 	client.userAgentCache = nil
 	client.deviceCache = nil
