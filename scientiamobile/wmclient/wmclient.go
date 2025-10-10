@@ -270,7 +270,7 @@ func (c *WmClient) GetActualCacheSizes() (int, int) {
 
 // GetCacheStats returns cache hit/miss statistics for both user-agent and device ID caches.
 // Returns a JSONStatsData struct containing all cache statistics and client information
-func (c *WmClient) GetCacheStats() *JSONStatsData {
+func (c *WmClient) GetCacheStats() (*JSONStatsData, error) {
 	return &JSONStatsData{
 		UserAgentCacheHits:   atomic.LoadUint64(&c.cacheHitUser),
 		UserAgentCacheMisses: atomic.LoadUint64(&c.cacheMissUser),
@@ -278,7 +278,7 @@ func (c *WmClient) GetCacheStats() *JSONStatsData {
 		DeviceIDCacheMisses:  atomic.LoadUint64(&c.cacheMissDevice),
 		WmClientVersion:      GetAPIVersion(),
 		Timestamp:            time.Now().Unix(),
-	}
+	}, nil
 }
 
 // ResetCacheStats resets all cache statistics counters to zero
@@ -333,6 +333,7 @@ func (c *WmClient) LookupRequest(request http.Request) (*JSONDeviceData, error) 
 		c.lruUserAgentCS.Unlock()
 
 		if ok {
+			// Increment cache hit counter: data was found in cache, no server request needed
 			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
@@ -348,9 +349,9 @@ func (c *WmClient) LookupRequest(request http.Request) (*JSONDeviceData, error) 
 		// check if server WURFL.xml has been updated and, if so, clear caches
 		c.clearCachesIfNeeded(deviceData.Ltime)
 
-		// lock and add element
+		// lock and add element to cache
 		if c.userAgentCache != nil {
-			// Cache miss
+			// Increment cache miss counter: data was not found in cache and had to be fetched from server
 			atomic.AddUint64(&c.cacheMissUser, 1)
 
 			c.lruUserAgentCS.Lock()
