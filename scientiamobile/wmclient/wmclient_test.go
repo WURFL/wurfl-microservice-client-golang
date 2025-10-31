@@ -950,3 +950,172 @@ func TestCacheUsage(t *testing.T) {
 	assert.True(t, avgDetectionTime > avgCacheTime*10)
 
 }
+
+// TestCacheStatsWithNoCache tests that cache statistics remain at zero when caching is disabled.
+// It verifies that when no cache is configured (cache = nil), all lookups go directly to the server
+// and no cache hit/miss counters are incremented, ensuring proper behavior when caching is not used.
+func TestCacheStatsWithNoCache(t *testing.T) {
+
+	// Create a client connected to the WURFL Microservice server
+	// Note: NOT calling SetCacheSize, so cache remains nil
+	client := createTestClient(t)
+
+	// Test 1: Initial state - all counters should be zero (cache is disabled)
+	jsonStatsData, err := client.GetCacheStats()
+	require.NotNil(t, jsonStatsData)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// Verify LastResetTimestamp was set during client creation
+	require.True(t, jsonStatsData.LastResetTimestamp > 0, "LastResetTimestamp should be set during client creation")
+
+	// Test data: user-agent string and device ID for lookups
+	ua := "Mozilla/5.0 (Linux; Android 4.4.4; SmartTV Build/KTU84P), AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132, _STB_C001_2017/0.9 (NETRANGEMMH, ExpressLuck, Wired)"
+	deviceID := "generic_opera_mini_version1"
+
+	// Test 2: First lookup by user-agent (no cache, direct server request)
+	// Since cache is nil, data will be fetched from server but NOT cached
+	// Counter should NOT be incremented because cache doesn't exist
+	d, err := client.LookupUserAgent(ua)
+	require.Nil(t, err)
+	require.NotNil(t, d)
+
+	// Test 3: First lookup by device ID (no cache, direct server request)
+	// Since cache is nil, data will be fetched from server but NOT cached
+	// Counter should NOT be incremented because cache doesn't exist
+	d, err = client.LookupDeviceID(deviceID)
+	require.Nil(t, err)
+	require.NotNil(t, d)
+
+	// Verify cache statistics after lookups:
+	// - All counters should still be 0 because cache is disabled (nil)
+	// - No hits/misses are tracked when cache doesn't exist
+	jsonStatsData, err = client.GetCacheStats()
+	require.NotNil(t, jsonStatsData)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// Verify LastResetTimestamp is still set
+	require.True(t, jsonStatsData.LastResetTimestamp > 0, "LastResetTimestamp should remain set")
+
+	// Test 4: Reset cache statistics
+	// ResetCacheStats should reset counters AND update LastResetTimestamp
+	firstResetTimestamp := jsonStatsData.LastResetTimestamp
+	time.Sleep(2 * time.Second) // Sleep to ensure timestamp changes
+	client.ResetCacheStats()
+
+	// Verify all counters remain at zero
+	jsonStatsData, err = client.GetCacheStats()
+	require.NotNil(t, jsonStatsData)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// LastResetTimestamp should be updated to a newer value
+	require.True(t, jsonStatsData.LastResetTimestamp > firstResetTimestamp, "LastResetTimestamp should be updated when calling ResetCacheStats")
+
+	// Clean up: destroy client connection
+	client.DestroyConnection()
+}
+
+// TestCacheStats tests the cache statistics tracking functionality.
+// It verifies that hit/miss counters are correctly incremented for both
+// user-agent and device ID caches, and that the ResetCacheStats method works properly.
+func TestCacheStats(t *testing.T) {
+
+	// Create a client connected to the WURFL Microservice server
+	client := createTestClient(t)
+
+	// Enable caching with space for 10,000 entries
+	client.SetCacheSize(10000)
+
+	// Test 1: Initial state - all counters should be zero
+	jsonStatsData, err := client.GetCacheStats()
+	require.NotNil(t, jsonStatsData)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// Verify LastResetTimestamp was set (cache was cleared by SetCacheSize)
+	initialResetTimestamp := jsonStatsData.LastResetTimestamp
+	require.True(t, initialResetTimestamp > 0, "LastResetTimestamp should be set after cache initialization")
+
+	// Test data: user-agent string and device ID for lookups
+	ua := "Mozilla/5.0 (Linux; Android 4.4.4; SmartTV Build/KTU84P), AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132, _STB_C001_2017/0.9 (NETRANGEMMH, ExpressLuck, Wired)"
+	deviceID := "generic_opera_mini_version1"
+
+	// Test 2: First lookup by user-agent (cache miss expected)
+	// Data is not in cache, so it will be fetched from server and cached
+	d, err := client.LookupUserAgent(ua)
+	require.Nil(t, err)
+	require.NotNil(t, d)
+
+	// Test 3: First lookup by device ID (cache miss expected)
+	// Data is not in cache, so it will be fetched from server and cached
+	d, err = client.LookupDeviceID(deviceID)
+	require.Nil(t, err)
+	require.NotNil(t, d)
+
+	// Verify cache statistics after first lookups:
+	// - 0 hits (nothing was in cache)
+	// - 1 UA miss (had to fetch UA from server)
+	// - 1 device miss (had to fetch device ID from server)
+	jsonStatsData, err = client.GetCacheStats()
+	require.NotNil(t, jsonStatsData)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheHits)
+	require.Equal(t, uint64(1), jsonStatsData.UserAgentCacheMisses)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
+	require.Equal(t, uint64(1), jsonStatsData.DeviceIDCacheMisses)
+
+	// Test 4: Second lookup by user-agent (cache hit expected)
+	// Same UA as before, should be found in cache
+	d, err = client.LookupUserAgent(ua)
+	require.Nil(t, err)
+	require.NotNil(t, d)
+
+	// Test 5: Second lookup by device ID (cache hit expected)
+	// Same device ID as before, should be found in cache
+	d, err = client.LookupDeviceID(deviceID)
+	require.Nil(t, err)
+	require.NotNil(t, d)
+
+	// Verify cache statistics after second lookups:
+	// - 1 UA hit (UA was found in cache)
+	// - 1 UA miss (from first lookup)
+	// - 1 device hit (device ID was found in cache)
+	// - 1 device miss (from first lookup)
+	jsonStatsData, err = client.GetCacheStats()
+	require.NotNil(t, jsonStatsData)
+	require.Nil(t, err)
+	require.Equal(t, uint64(1), jsonStatsData.UserAgentCacheHits)
+	require.Equal(t, uint64(1), jsonStatsData.UserAgentCacheMisses)
+	require.Equal(t, uint64(1), jsonStatsData.DeviceIDCacheHits)
+	require.Equal(t, uint64(1), jsonStatsData.DeviceIDCacheMisses)
+
+	// Test 6: Reset cache statistics
+	// This should reset all counters to zero without clearing the cache itself
+	// But it should update LastResetTimestamp
+	time.Sleep(2 * time.Second) // Sleep to ensure timestamp changes
+	client.ResetCacheStats()
+
+	// Verify all counters are reset to zero
+	jsonStatsData, err = client.GetCacheStats()
+	require.NotNil(t, jsonStatsData)
+	require.Nil(t, err)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
+	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// LastResetTimestamp should be updated to a newer value
+	require.True(t, jsonStatsData.LastResetTimestamp > initialResetTimestamp, "LastResetTimestamp should be updated when calling ResetCacheStats")
+
+	// Clean up: destroy client connection
+	client.DestroyConnection()
+}

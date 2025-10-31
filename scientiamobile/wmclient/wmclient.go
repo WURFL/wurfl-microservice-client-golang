@@ -28,6 +28,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/golang/groupcache/lru"
@@ -71,11 +72,18 @@ type WmClient struct {
 	deviceOsVerMap  map[string][]string
 
 	clientLtime string
+
+	// Cache statistics using atomic counters for thread-safe access
+	cacheHitUser            uint64 // user-agent cache hits
+	cacheMissUser           uint64 // user-agent cache misses
+	cacheHitDevice          uint64 // device ID cache hits
+	cacheMissDevice         uint64 // device ID cache misses
+	cacheLastResetTimestamp int64  // timestamp of the last cache reset
 }
 
 // GetAPIVersion returns the version number of WM Client API
 func GetAPIVersion() string {
-	return "2.1.3"
+	return "2.2.0"
 }
 
 // creates a new http.Client with the specified timeouts
@@ -123,6 +131,12 @@ func Create(Scheme string, Host string, Port string, BaseURI string) (*WmClient,
 	client.VirtualCaps = data.VirtualCaps
 	sort.Strings(client.StaticCaps)
 	sort.Strings(client.VirtualCaps)
+
+	client.userAgentCache = nil
+	client.deviceCache = nil
+
+	client.cacheLastResetTimestamp = time.Now().Unix()
+
 	return client, nil
 }
 
@@ -199,7 +213,8 @@ func (c *WmClient) SetCacheSize(uaMaxEntries int) {
 	c.deviceCache = lru.New(deviceDefaultCacheSize)
 }
 
-// clearCache Removes all entries from WM client cache, every cache is cleared using its own mutex, to avoid goroutines to use it while we are clearing it
+// clearCache Removes all entries from WM client cache, every cache is cleared using its own mutex, to avoid goroutines to use it while we are clearing it.
+// This method clears all cache data AND resets all cache statistics counters.
 func (c *WmClient) clearCache() {
 
 	c.lruUserAgentCS.Lock()
@@ -227,6 +242,13 @@ func (c *WmClient) clearCache() {
 	c.deviceOses = nil
 	c.deviceOsVerMap = nil
 	c.deviceOsesMutex.Unlock()
+
+	// Reset cache statistics counters and update last reset timestamp
+	atomic.StoreUint64(&c.cacheHitUser, 0)
+	atomic.StoreUint64(&c.cacheMissUser, 0)
+	atomic.StoreUint64(&c.cacheHitDevice, 0)
+	atomic.StoreUint64(&c.cacheMissDevice, 0)
+	atomic.StoreInt64(&c.cacheLastResetTimestamp, time.Now().Unix())
 }
 
 // GetActualCacheSizes return the values of cache size. The first value being the device-id based cache, the second value being
@@ -249,6 +271,29 @@ func (c *WmClient) GetActualCacheSizes() (int, int) {
 	c.lruUserAgentCS.Unlock()
 
 	return dSize, uaSize
+}
+
+// GetCacheStats returns cache hit/miss statistics for both user-agent and device ID caches.
+// Returns a JSONStatsData struct containing all cache statistics and client information
+func (c *WmClient) GetCacheStats() (*JSONStatsData, error) {
+	return &JSONStatsData{
+		UserAgentCacheHits:   atomic.LoadUint64(&c.cacheHitUser),
+		UserAgentCacheMisses: atomic.LoadUint64(&c.cacheMissUser),
+		DeviceIDCacheHits:    atomic.LoadUint64(&c.cacheHitDevice),
+		DeviceIDCacheMisses:  atomic.LoadUint64(&c.cacheMissDevice),
+		LastResetTimestamp:   atomic.LoadInt64(&c.cacheLastResetTimestamp),
+	}, nil
+}
+
+// ResetCacheStats resets all cache statistics counters to zero and updates the last reset timestamp.
+// This method only resets the statistics counters (hits/misses), it does NOT clear the cache data itself.
+// Use clearCache() if you need to clear both cache data and statistics.
+func (c *WmClient) ResetCacheStats() {
+	atomic.StoreUint64(&c.cacheHitUser, 0)
+	atomic.StoreUint64(&c.cacheMissUser, 0)
+	atomic.StoreUint64(&c.cacheHitDevice, 0)
+	atomic.StoreUint64(&c.cacheMissDevice, 0)
+	atomic.StoreInt64(&c.cacheLastResetTimestamp, time.Now().Unix())
 }
 
 // HasStaticCapability - returns true if the given CapName exist in this client' static capability set, false otherwise
@@ -295,6 +340,8 @@ func (c *WmClient) LookupRequest(request http.Request) (*JSONDeviceData, error) 
 		c.lruUserAgentCS.Unlock()
 
 		if ok {
+			// Increment cache hit counter: data was found in cache, no server request needed
+			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
 		}
@@ -309,8 +356,11 @@ func (c *WmClient) LookupRequest(request http.Request) (*JSONDeviceData, error) 
 		// check if server WURFL.xml has been updated and, if so, clear caches
 		c.clearCachesIfNeeded(deviceData.Ltime)
 
-		// lock and add element
+		// lock and add element to cache
 		if c.userAgentCache != nil {
+			// Increment cache miss counter: data was not found in cache and had to be fetched from server
+			atomic.AddUint64(&c.cacheMissUser, 1)
+
 			c.lruUserAgentCS.Lock()
 			c.userAgentCache.Add(c.getUserAgentCacheKey(jrequest.LookupHeaders), deviceData)
 			c.lruUserAgentCS.Unlock()
@@ -343,11 +393,14 @@ func (c *WmClient) LookupHeaders(headers map[string]string) (*JSONDeviceData, er
 	// Do a cache lookup
 	if c.userAgentCache != nil {
 
+		cacheKey := c.getUserAgentCacheKey(jrequest.LookupHeaders)
+
 		c.lruUserAgentCS.Lock()
-		value, ok := c.userAgentCache.Get(c.getUserAgentCacheKey(jrequest.LookupHeaders))
+		value, ok := c.userAgentCache.Get(cacheKey)
 		c.lruUserAgentCS.Unlock()
 
 		if ok {
+			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
 		}
@@ -364,8 +417,12 @@ func (c *WmClient) LookupHeaders(headers map[string]string) (*JSONDeviceData, er
 
 		// lock and add element
 		if c.userAgentCache != nil {
+			// Cache miss
+			atomic.AddUint64(&c.cacheMissUser, 1)
+
+			cacheKey := c.getUserAgentCacheKey(jrequest.LookupHeaders)
 			c.lruUserAgentCS.Lock()
-			c.userAgentCache.Add(c.getUserAgentCacheKey(jrequest.LookupHeaders), deviceData)
+			c.userAgentCache.Add(cacheKey, deviceData)
 			c.lruUserAgentCS.Unlock()
 		}
 	}
@@ -386,6 +443,7 @@ func (c *WmClient) LookupUserAgent(userAgent string) (*JSONDeviceData, error) {
 		c.lruUserAgentCS.Unlock()
 
 		if ok {
+			atomic.AddUint64(&c.cacheHitUser, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
 		}
@@ -405,6 +463,9 @@ func (c *WmClient) LookupUserAgent(userAgent string) (*JSONDeviceData, error) {
 
 		// we need to lock when writing since cache is not thread safe
 		if c.userAgentCache != nil {
+			// Cache miss
+			atomic.AddUint64(&c.cacheMissUser, 1)
+
 			c.lruUserAgentCS.Lock()
 			c.userAgentCache.Add(c.getUserAgentCacheKey(headers), deviceData)
 			c.lruUserAgentCS.Unlock()
@@ -424,6 +485,7 @@ func (c *WmClient) LookupDeviceID(deviceID string) (*JSONDeviceData, error) {
 		c.lruDeviceCS.Unlock()
 
 		if ok {
+			atomic.AddUint64(&c.cacheHitDevice, 1)
 			jdd := value.(*JSONDeviceData)
 			return jdd, nil
 		}
@@ -441,6 +503,9 @@ func (c *WmClient) LookupDeviceID(deviceID string) (*JSONDeviceData, error) {
 		c.clearCachesIfNeeded(deviceData.Ltime)
 
 		if c.deviceCache != nil {
+			// Cache miss
+			atomic.AddUint64(&c.cacheMissDevice, 1)
+
 			// we need to lock when writing since cache is not thread safe
 			c.lruDeviceCS.Lock()
 			c.deviceCache.Add(deviceID, deviceData)
@@ -576,8 +641,11 @@ func (c *WmClient) getUserAgentCacheKey(headers map[string]string) string {
 	for _, hname := range c.ImportantHeaders {
 		key += headers[hname]
 	}
+
 	md5Sum := md5.Sum([]byte(key))
-	return hex.EncodeToString(md5Sum[:])
+	hash := hex.EncodeToString(md5Sum[:])
+
+	return hash
 }
 
 func checkData(data *JSONInfoData) bool {
