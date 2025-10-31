@@ -74,10 +74,11 @@ type WmClient struct {
 	clientLtime string
 
 	// Cache statistics using atomic counters for thread-safe access
-	cacheHitUser    uint64 // user-agent cache hits
-	cacheMissUser   uint64 // user-agent cache misses
-	cacheHitDevice  uint64 // device ID cache hits
-	cacheMissDevice uint64 // device ID cache misses
+	cacheHitUser            uint64 // user-agent cache hits
+	cacheMissUser           uint64 // user-agent cache misses
+	cacheHitDevice          uint64 // device ID cache hits
+	cacheMissDevice         uint64 // device ID cache misses
+	cacheLastResetTimestamp int64  // timestamp of the last cache reset
 }
 
 // GetAPIVersion returns the version number of WM Client API
@@ -133,6 +134,8 @@ func Create(Scheme string, Host string, Port string, BaseURI string) (*WmClient,
 
 	client.userAgentCache = nil
 	client.deviceCache = nil
+
+	client.cacheLastResetTimestamp = time.Now().Unix()
 
 	return client, nil
 }
@@ -210,7 +213,8 @@ func (c *WmClient) SetCacheSize(uaMaxEntries int) {
 	c.deviceCache = lru.New(deviceDefaultCacheSize)
 }
 
-// clearCache Removes all entries from WM client cache, every cache is cleared using its own mutex, to avoid goroutines to use it while we are clearing it
+// clearCache Removes all entries from WM client cache, every cache is cleared using its own mutex, to avoid goroutines to use it while we are clearing it.
+// This method clears all cache data AND resets all cache statistics counters.
 func (c *WmClient) clearCache() {
 
 	c.lruUserAgentCS.Lock()
@@ -239,11 +243,12 @@ func (c *WmClient) clearCache() {
 	c.deviceOsVerMap = nil
 	c.deviceOsesMutex.Unlock()
 
-	// Reset cache statistics
+	// Reset cache statistics counters and update last reset timestamp
 	atomic.StoreUint64(&c.cacheHitUser, 0)
 	atomic.StoreUint64(&c.cacheMissUser, 0)
 	atomic.StoreUint64(&c.cacheHitDevice, 0)
 	atomic.StoreUint64(&c.cacheMissDevice, 0)
+	atomic.StoreInt64(&c.cacheLastResetTimestamp, time.Now().Unix())
 }
 
 // GetActualCacheSizes return the values of cache size. The first value being the device-id based cache, the second value being
@@ -276,17 +281,19 @@ func (c *WmClient) GetCacheStats() (*JSONStatsData, error) {
 		UserAgentCacheMisses: atomic.LoadUint64(&c.cacheMissUser),
 		DeviceIDCacheHits:    atomic.LoadUint64(&c.cacheHitDevice),
 		DeviceIDCacheMisses:  atomic.LoadUint64(&c.cacheMissDevice),
-		WmClientVersion:      GetAPIVersion(),
-		Timestamp:            time.Now().Unix(),
+		LastResetTimestamp:   atomic.LoadInt64(&c.cacheLastResetTimestamp),
 	}, nil
 }
 
-// ResetCacheStats resets all cache statistics counters to zero
+// ResetCacheStats resets all cache statistics counters to zero and updates the last reset timestamp.
+// This method only resets the statistics counters (hits/misses), it does NOT clear the cache data itself.
+// Use clearCache() if you need to clear both cache data and statistics.
 func (c *WmClient) ResetCacheStats() {
 	atomic.StoreUint64(&c.cacheHitUser, 0)
 	atomic.StoreUint64(&c.cacheMissUser, 0)
 	atomic.StoreUint64(&c.cacheHitDevice, 0)
 	atomic.StoreUint64(&c.cacheMissDevice, 0)
+	atomic.StoreInt64(&c.cacheLastResetTimestamp, time.Now().Unix())
 }
 
 // HasStaticCapability - returns true if the given CapName exist in this client' static capability set, false otherwise

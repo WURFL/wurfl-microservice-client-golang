@@ -968,6 +968,8 @@ func TestCacheStatsWithNoCache(t *testing.T) {
 	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// Verify LastResetTimestamp was set during client creation
+	require.True(t, jsonStatsData.LastResetTimestamp > 0, "LastResetTimestamp should be set during client creation")
 
 	// Test data: user-agent string and device ID for lookups
 	ua := "Mozilla/5.0 (Linux; Android 4.4.4; SmartTV Build/KTU84P), AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132, _STB_C001_2017/0.9 (NETRANGEMMH, ExpressLuck, Wired)"
@@ -997,8 +999,13 @@ func TestCacheStatsWithNoCache(t *testing.T) {
 	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// Verify LastResetTimestamp is still set
+	require.True(t, jsonStatsData.LastResetTimestamp > 0, "LastResetTimestamp should remain set")
 
-	// Test 4: Reset cache statistics (should have no effect since all are zero)
+	// Test 4: Reset cache statistics
+	// ResetCacheStats should reset counters AND update LastResetTimestamp
+	firstResetTimestamp := jsonStatsData.LastResetTimestamp
+	time.Sleep(2 * time.Second) // Sleep to ensure timestamp changes
 	client.ResetCacheStats()
 
 	// Verify all counters remain at zero
@@ -1009,6 +1016,8 @@ func TestCacheStatsWithNoCache(t *testing.T) {
 	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// LastResetTimestamp should be updated to a newer value
+	require.True(t, jsonStatsData.LastResetTimestamp > firstResetTimestamp, "LastResetTimestamp should be updated when calling ResetCacheStats")
 
 	// Clean up: destroy client connection
 	client.DestroyConnection()
@@ -1033,6 +1042,9 @@ func TestCacheStats(t *testing.T) {
 	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// Verify LastResetTimestamp was set (cache was cleared by SetCacheSize)
+	initialResetTimestamp := jsonStatsData.LastResetTimestamp
+	require.True(t, initialResetTimestamp > 0, "LastResetTimestamp should be set after cache initialization")
 
 	// Test data: user-agent string and device ID for lookups
 	ua := "Mozilla/5.0 (Linux; Android 4.4.4; SmartTV Build/KTU84P), AppleWebKit/537.36 (KHTML, like Gecko) Chrome/43.0.2357.132, _STB_C001_2017/0.9 (NETRANGEMMH, ExpressLuck, Wired)"
@@ -1089,6 +1101,8 @@ func TestCacheStats(t *testing.T) {
 
 	// Test 6: Reset cache statistics
 	// This should reset all counters to zero without clearing the cache itself
+	// But it should update LastResetTimestamp
+	time.Sleep(2 * time.Second) // Sleep to ensure timestamp changes
 	client.ResetCacheStats()
 
 	// Verify all counters are reset to zero
@@ -1099,6 +1113,8 @@ func TestCacheStats(t *testing.T) {
 	require.Equal(t, uint64(0), jsonStatsData.UserAgentCacheMisses)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheHits)
 	require.Equal(t, uint64(0), jsonStatsData.DeviceIDCacheMisses)
+	// LastResetTimestamp should be updated to a newer value
+	require.True(t, jsonStatsData.LastResetTimestamp > initialResetTimestamp, "LastResetTimestamp should be updated when calling ResetCacheStats")
 
 	// Clean up: destroy client connection
 	client.DestroyConnection()

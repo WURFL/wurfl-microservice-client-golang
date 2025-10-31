@@ -80,6 +80,6 @@ type JSONStatsData struct {
 	UserAgentCacheMisses uint64 `json:"user_agent_cache_misses"`
 	DeviceIDCacheHits    uint64 `json:"device_id_cache_hits"`
 	DeviceIDCacheMisses  uint64 `json:"device_id_cache_misses"`
-	WmClientVersion      string `json:"wm_client_version"`
-	Timestamp            int64  `json:"timestamp"`
+	// Unix timestamp of the last cache reset request
+	LastResetTimestamp int64 `json:"last_reset_timestamp"`
 }
